@@ -2,7 +2,6 @@
 FROM debian:trixie
 
 RUN rm -f /etc/apt/apt.conf.d/docker-clean
-
 ## Installing the packages
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -28,17 +27,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     wget \
     curl \
     tcpdump \
-    iproute2 \
+    iproute2 
 
-## SSH Connection
 RUN useradd -m -s /bin/bash appuser \
     && mkdir -p /var/run/sshd /home/appuser/.ssh \
     && chmod 700 /home/appuser/.ssh \
     && echo "appuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 COPY --chown=appuser:appuser id_ed25519.pub /home/appuser/.ssh/authorized_keys
-
-## SSH File Permissions
 RUN chmod 600 /home/appuser/.ssh/authorized_keys \
     && chown -R appuser:appuser /home/appuser/.ssh \
     && chmod 700 /home/appuser/.ssh
@@ -48,6 +44,9 @@ RUN printf "PasswordAuthentication no\nPermitRootLogin no\n" >> /etc/ssh/sshd_co
 WORKDIR /workspace
 RUN chown appuser:appuser /workspace
 
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 22
 
-CMD ["/usr/sbin/sshd", "-D"]
+ENTRYPOINT ["/entrypoint.sh"]
