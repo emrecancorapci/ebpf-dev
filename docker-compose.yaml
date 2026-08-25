@@ -1,0 +1,31 @@
+services:
+  ebpf-dev:
+    build:
+      context: .
+      network: host
+    image: ebpf-dev:latest
+    container_name: ebpf-dev
+    privileged: true
+    ports:
+      - "2222:22"
+    networks:
+      ebpf-net:
+        ipv4_address: 172.28.0.10
+    volumes:
+      - /sys/kernel/debug:/sys/kernel/debug:rw
+      - /sys/fs/bpf:/sys/fs/bpf:rw
+      - /lib/modules:/lib/modules:ro
+      - /usr/src:/usr/src:ro
+      - ./workspace:/workspace
+      - ssh-host-keys:/etc/ssh
+    working_dir: /workspace
+
+networks:
+  ebpf-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  ssh-host-keys:
