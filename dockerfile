@@ -6,7 +6,6 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    linux-headers-arm64 \
     sudo \
     git \
     make \
@@ -14,14 +13,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     clang \
     build-essential \
     llvm \
+    linux-libc-dev \
     libstdc++6 \
     libbpf-dev \
     libelf-dev \
+    libxdp-dev \
     libbpfcc-dev \
     bpftool \
     bpfcc-tools \
     xdp-tools \
     pkg-config \
+    clangd \
+    just \
     ca-certificates \
     openssh-server \
     wget \
