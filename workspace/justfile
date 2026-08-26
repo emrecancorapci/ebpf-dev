@@ -1,0 +1,29 @@
+run name *args:
+    @just build {{name}}
+    @just bin {{name}}
+    sudo ./bin/{{name}} {{args}}
+
+build name:
+    clang -O2 -g -Wall -c src/userspace/{{ name }}.c -o build/{{ name }}.o
+
+bin name:
+    clang build/{{ name }}.o -o bin/{{ name }} -lxdp -lbpf
+
+xdp-run name:
+    @just xdp-build {{name}}
+    @just xdp-load {{name}}
+
+xdp-build name:
+    clang -O2 -g -Wall -target bpf -I/usr/include/aarch64-linux-gnu -c src/ebpf/{{ name }}.c -o build/{{ name }}.o
+
+xdp-load name:
+    sudo xdp-loader load lo build/{{ name }}.o -m skb
+
+status:
+    sudo xdp-loader status
+
+drop:
+    sudo xdp-loader unload lo --all
+
+prog-list:
+    sudo bpftool prog list
