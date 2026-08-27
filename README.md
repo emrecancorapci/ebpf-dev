@@ -25,6 +25,11 @@ ebpf-dev/
 ├── setup.sh             # One-time: generates/copies your SSH public key
 ├── id_ed25519.pub        # Your public key, baked into the image at build time
 └── workspace/            # Your code — bind-mounted, persists on the host
+    ├── justfile          # Build/run recipes (see "XDP/eBPF workflow")
+    ├── src/ebpf/         # XDP kernel programs
+    ├── src/userspace/    # Userspace tools
+    ├── build/            # Build artifacts (objects, per-tool subdirs)
+    └── bin/              # Linked userspace binaries
 ```
 
 ## First-time setup
@@ -76,29 +81,6 @@ ssh-add ~/.ssh/id_ed25519
 Port `2222` on the host also forwards to the container's port 22, as a
 fallback: `ssh -p 2222 appuser@localhost`.
 
-### If SSH says "Permission denied (publickey)"
-
-Almost always an ownership issue on `.ssh` inside the container. `entrypoint.sh`
-re-asserts correct ownership on every container **start**, so this should no
-longer happen after a proper rebuild. If it still does:
-```bash
-docker compose exec ebpf-dev cat /home/appuser/.ssh/authorized_keys
-cat ~/.ssh/id_ed25519.pub
-```
-Confirm these match exactly. If they don't, your `id_ed25519.pub` in the
-project folder is stale — re-run `./setup.sh` and rebuild.
-
-### If SSH warns "REMOTE HOST IDENTIFICATION HAS CHANGED"
-
-Expected after an image rebuild if SSH host keys aren't persisted — clear the
-stale entry:
-```bash
-ssh-keygen -R localhost
-ssh-keygen -R 172.28.0.10
-```
-(Host keys are persisted in a named volume, `ssh-host-keys`, so this should
-only happen if that volume gets removed.)
-
 ## Networking
 
 The container is **not** on host networking — it has its own namespace and
@@ -124,11 +106,14 @@ Inside the container, confirm the interface name (should be `eth0`):
 docker compose exec ebpf-dev ip -br a
 ```
 
-Build and load a program (adjust `iface` in your `justfile` to `eth0`):
+Build and load a program with `xdp-loader`:
 ```bash
-just load <program_name>
+just build-xdp <name>                       # src/ebpf/<name>.c -> build/<name>.o
+just load-xdp <name>                        # load onto lo (edit recipe for eth0)
 sudo docker compose exec ebpf-dev xdp-loader status
 ```
+
+Or build+load in one step: `just run-xdp <name>`.
 
 Test from the host against the container's IP:
 ```bash
@@ -140,6 +125,38 @@ Unload when done:
 sudo docker compose exec ebpf-dev xdp-loader unload eth0 --all
 ```
 
+### Userspace tools (`src/userspace/<name>/`)
+
+Multi-file userspace tools are built per-directory — every `.c` compiles to
+`build/<name>/<file>.o` (exact names, no collisions) and links into
+`bin/<name>`:
+
+```bash
+just build-dir 11_map_lookup_ai   # build only
+just run 11_map_lookup_ai ...     # run the already-built binary (sudo)
+```
+
+#### `11_map_lookup_ai` — attach + poll maps from userspace
+
+An XDP loader/monitor that works with **any** XDP object: it pins *all* maps
+from the object under `/sys/fs/bpf/<ifname>/<map_name>` (no hardcoded map
+name) and polls them:
+
+```bash
+just build-xdp 11_map_lookup_kern
+just run 11_map_lookup_ai load   -i eth0 -f build/11_map_lookup_kern.o -m skb
+just run 11_map_lookup_ai lookup -i eth0     # Ctrl-C to stop
+just run 11_map_lookup_ai unload -i eth0
+```
+
+`lookup` pretty-prints maps whose layout matches `struct limit_info`
+(`__u32` key → pkt/byte counters, see `src/userspace/11_map_lookup_ai/config.h`);
+other map layouts are listed but skipped. The matching kernel program is
+`src/ebpf/11_map_lookup_kern.c` (LRU hash keyed by source IPv4).
+
+Other recipes: `just status` (XDP program list), `just prog-list`
+(bpftool), `just drop` (unload all from `lo`).
+
 ## Persistence
 
 | What                         | Persists?  | Where                              |
@@ -150,3 +167,28 @@ sudo docker compose exec ebpf-dev xdp-loader unload eth0 --all
 | Anything else written inside the container (e.g. `/tmp`, stray files outside `/workspace`) | **No** | Lost on container recreation |
 
 Keep anything you care about inside `/workspace`.
+
+## Troubleshooting
+
+### SSH says "Permission denied (publickey)"
+
+Almost always an ownership issue on `.ssh` inside the container. `entrypoint.sh`
+re-asserts correct ownership on every container **start**, so this should no
+longer happen after a proper rebuild. If it still does:
+```bash
+docker compose exec ebpf-dev cat /home/appuser/.ssh/authorized_keys
+cat ~/.ssh/id_ed25519.pub
+```
+Confirm these match exactly. If they don't, your `id_ed25519.pub` in the
+project folder is stale — re-run `./setup.sh` and rebuild.
+
+### SSH warns "REMOTE HOST IDENTIFICATION HAS CHANGED"
+
+Expected after an image rebuild if SSH host keys aren't persisted — clear the
+stale entry:
+```bash
+ssh-keygen -R localhost
+ssh-keygen -R 172.28.0.10
+```
+(Host keys are persisted in a named volume, `ssh-host-keys`, so this should
+only happen if that volume gets removed.)
