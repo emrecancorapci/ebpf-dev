@@ -1,29 +1,52 @@
 run name *args:
-    @just build {{name}}
-    @just bin {{name}}
-    sudo ./bin/{{name}} {{args}}
+    sudo ./bin/{{ name }} {{ args }}
+
+build-dir name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p build/{{ name }} bin
+    objs=()
+    for src in src/userspace/{{ name }}/*.c; do
+        obj=build/{{ name }}/$(basename "$src" .c).o
+        objs+=("$obj")
+        clang -O2 -g -Wall -c "$src" -o "$obj"
+    done
+    clang "${objs[@]}" -o bin/{{ name }} -lxdp -lbpf
 
 build name:
-    clang -O2 -g -Wall -c src/userspace/{{ name }}.c -o build/{{ name }}.o
+    @just _build src/userspace/{{ name }}.c build/{{ name }}.o
+    @just _bin build/{{ name }}.o bin/{{ name }}
 
-bin name:
-    clang build/{{ name }}.o -o bin/{{ name }} -lxdp -lbpf
+run-xdp name:
+    @just build-xdp {{ name }}
+    @just load-xdp {{ name }}
 
-xdp-run name:
-    @just xdp-build {{name}}
-    @just xdp-load {{name}}
+build-xdp name:
+    @just _build-xdp src/ebpf/{{ name }}.c build/{{ name }}.o
 
-xdp-build name:
-    clang -O2 -g -Wall -target bpf -I/usr/include/aarch64-linux-gnu -c src/ebpf/{{ name }}.c -o build/{{ name }}.o
-
-xdp-load name:
-    sudo xdp-loader load lo build/{{ name }}.o -m skb
+load-xdp name ifname:
+    @just _load-xdp build/{{ name }}.o {{ ifname }} -m skb
 
 status:
     sudo xdp-loader status
 
-drop:
-    sudo xdp-loader unload lo --all
+unload ifname:
+    sudo xdp-loader unload {{ ifname }} --all
 
 prog-list:
     sudo bpftool prog list
+
+####
+
+_build source output:
+    clang -O2 -g -Wall -c {{ source }} -o {{ output }}
+
+_bin source output:
+    clang {{ source }} -o {{ output }} -lxdp -lbpf
+
+
+_build-xdp source output:
+    clang -O2 -g -Wall -target bpf -I/usr/include/aarch64-linux-gnu -c {{ source }} -o {{ output }}
+
+_load-xdp path ifname:
+    sudo xdp-loader load {{ ifname }} {{ path }} -m skb
