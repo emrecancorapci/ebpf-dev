@@ -1,31 +1,49 @@
+i_flag := "-I/usr/include/" + arch() + "-linux-gnu"
+
+## USERSPACE
+
 run name *args:
-    sudo ./bin/{{ name }} {{ args }}
+    sudo ./bin/{{ name }}/bin {{ args }}
+
+build name:
+    @mkdir -p build bin
+    @just build-raw src/userspace/{{ name }}.c build/{{ name }}.o
+    @just _bin build/{{ name }}.o bin/{{ name }}
 
 build-dir name:
     #!/usr/bin/env bash
     set -euo pipefail
+
     mkdir -p build/{{ name }} bin
     objs=()
+
     for src in src/userspace/{{ name }}/*.c; do
         obj=build/{{ name }}/$(basename "$src" .c).o
         objs+=("$obj")
         clang -O2 -g -Wall -c "$src" -o "$obj"
     done
-    clang "${objs[@]}" -o bin/{{ name }} -lxdp -lbpf
 
-build name:
-    @just _build src/userspace/{{ name }}.c build/{{ name }}.o
-    @just _bin build/{{ name }}.o bin/{{ name }}
+    mkdir -p bin/{{ name }}
+    clang "${objs[@]}" -o bin/{{ name }}/bin -lxdp -lbpf
+
+## XDP
 
 run-xdp name:
     @just build-xdp {{ name }}
     @just load-xdp {{ name }}
 
 build-xdp name:
-    @just _build-xdp src/ebpf/{{ name }}.c build/{{ name }}.o
+    @mkdir -p build
+    @just build-xdp-raw src/ebpf/{{ name }}.c build/{{ name }}.o
+
+build-dir-xdp name:
+    @mkdir -p build
+    @just build-xdp-raw src/ebpf/{{ name }}/main.bpf.c build/{{ name }}.o
 
 load-xdp name ifname:
-    @just _load-xdp build/{{ name }}.o {{ ifname }} -m skb
+    @just load-xdp-raw {{ ifname }} build/{{ name }}.o
+
+## UTILITIES
 
 status:
     sudo xdp-loader status
@@ -36,17 +54,16 @@ unload ifname:
 prog-list:
     sudo bpftool prog list
 
-####
+##
 
-_build source output:
+build-raw source output:
     clang -O2 -g -Wall -c {{ source }} -o {{ output }}
 
 _bin source output:
     clang {{ source }} -o {{ output }} -lxdp -lbpf
 
+build-xdp-raw source output:
+    clang -O2 -g -Wall -target bpf {{ i_flag }} -c {{ source }} -o {{ output }}
 
-_build-xdp source output:
-    clang -O2 -g -Wall -target bpf -I/usr/include/aarch64-linux-gnu -c {{ source }} -o {{ output }}
-
-_load-xdp path ifname:
-    sudo xdp-loader load {{ ifname }} {{ path }} -m skb
+load-xdp-raw ifname path *args:
+    sudo xdp-loader load {{ ifname }} {{ path }} -m skb {{ args }}
